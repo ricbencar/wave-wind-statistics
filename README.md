@@ -1,4 +1,4 @@
-# Comprehensive Extreme Value Analysis (EVA)
+# Wave & Wind Descriptive and Extreme Value statistics based on ECMWF ERA5 data.
 
 ## Table of Contents
 - [Title](#title)
