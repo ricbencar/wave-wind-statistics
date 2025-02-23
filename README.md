@@ -45,7 +45,7 @@ pip install numpy pandas matplotlib scipy fpdf windrose
 ## Usage
 To execute the script, provide the filename of the input CSV file as an argument:
      
-python stats_era5_(swh_mwd_pp1d_wind_dwi).py <filename.csv>
+stats_era5_data.py <filename.csv>
 
 The script will generate two output files:
 
