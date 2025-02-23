@@ -1,4 +1,18 @@
-# Wave & Wind Statistics based on ECMWF ERA5 data.
+# Comprehensive Extreme Value Analysis (EVA)
+
+## Table of Contents
+- [Title](#title)
+- [Description](#description)
+- [Input Format](#input-format)
+- [Functionality Overview](#functionality-overview)
+- [Dependencies](#dependencies)
+- [Usage](#usage)
+- [Utility Functions](#utility-functions)
+- [Main Analysis Workflow](#main-analysis-workflow)
+- [License](#license)
+
+## Title
+`stats_era5_(swh_mwd_pp1d_wind_dwi).py`
 
 ## Description
 This Python script performs a Comprehensive Extreme Value Analysis (EVA) on environmental data. Specifically, it includes:
@@ -45,7 +59,7 @@ pip install numpy pandas matplotlib scipy fpdf windrose
 ## Usage
 To execute the script, provide the filename of the input CSV file as an argument:
      
-stats_era5_data.py <filename.csv>
+python stats_era5_(swh_mwd_pp1d_wind_dwi).py <filename.csv>
 
 The script will generate two output files:
 
