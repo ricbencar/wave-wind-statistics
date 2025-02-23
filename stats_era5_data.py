@@ -656,6 +656,6 @@ def extreme_value_analysis(input_csv):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python stats_era5_(swh_mwd_pp1d_wind_dwi).py <filename.csv>")
+        print("Usage: stats_era5_data.py <filename.csv>")
         sys.exit(1)
     extreme_value_analysis(sys.argv[1])
