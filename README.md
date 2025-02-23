@@ -1,4 +1,4 @@
-# Wave & Wind Descriptive and Extreme Value statistics based on ECMWF ERA5 data.
+# Wave & Wind Statistics based on ECMWF ERA5 data.
 
 ## Table of Contents
 - [Title](#title)
