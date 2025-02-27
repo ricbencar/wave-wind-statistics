@@ -63,28 +63,28 @@ python stats_era5_(swh_mwd_pp1d_wind_dwi).py <filename.csv>
 
 The script will generate two output files:
 
-    A detailed CSV report (.rpt.csv)
-    A PDF report (.pdf) with visualizations and statistics.
+A detailed CSV report (.rpt.csv)
+A PDF report (.pdf) with visualizations and statistics.
 
 ## Utility Functions
 
-    round_variables(df): Rounds specific columns of a DataFrame to defined decimal places.
-    format_interval(interval_str): Converts an interval string to a compact format.
-    make_joint_distribution(df, var1, var2, bins1, bins2): Computes a 2D joint distribution between two variables in percentage.
-    add_sums_and_highlight(df): Enhances a DataFrame for highlighting maximum values for PDF output.
-    gev_fit(annual_max_series): Fits a GEV distribution to an annual maximum series.
-    plot_gev_with_return_lines(...): Generates a plot comparing empirical CDF with a fitted GEV CDF.
-    plot_windrose(df, var, dir_col, ...): Creates a windrose plot for a given variable against its directional data.
-    pdf_print_table(pdf, df, ...): Renders a DataFrame as a formatted table onto a PDF page.
+round_variables(df): Rounds specific columns of a DataFrame to defined decimal places.
+format_interval(interval_str): Converts an interval string to a compact format.
+make_joint_distribution(df, var1, var2, bins1, bins2): Computes a 2D joint distribution between two variables in percentage.
+add_sums_and_highlight(df): Enhances a DataFrame for highlighting maximum values for PDF output.
+gev_fit(annual_max_series): Fits a GEV distribution to an annual maximum series.
+plot_gev_with_return_lines(...): Generates a plot comparing empirical CDF with a fitted GEV CDF.
+plot_windrose(df, var, dir_col, ...): Creates a windrose plot for a given variable against its directional data.
+pdf_print_table(pdf, df, ...): Renders a DataFrame as a formatted table onto a PDF page.
 
 ## Main Analysis Workflow
 extreme_value_analysis(input_csv)
 
 This function encapsulates the entire analysis process. It handles:
 
-    Reading of the input CSV.
-    Data rounding and descriptive statistics computation.
-    GEV fitting and analysis (both overall and by sector).
-    Joint distribution calculations.
-    Visualization creation including CDF plots and windrose plots.
-    PDF report generation containing all results.
+Reading of the input CSV.
+Data rounding and descriptive statistics computation.
+GEV fitting and analysis (both overall and by sector).
+Joint distribution calculations.
+Visualization creation including CDF plots and windrose plots.
+PDF report generation containing all results.
