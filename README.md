@@ -1,17 +1,4 @@
-# Comprehensive Extreme Value Analysis (EVA)
-
-## Table of Contents
-- [Title](#title)
-- [Description](#description)
-- [Input Format](#input-format)
-- [Functionality Overview](#functionality-overview)
-- [Dependencies](#dependencies)
-- [Usage](#usage)
-- [Utility Functions](#utility-functions)
-- [Main Analysis Workflow](#main-analysis-workflow)
-- [License](#license)
-
-## Title
+# Extreme Value Analysis (EVA) of Waves and Wind
 `stats_era5_(swh_mwd_pp1d_wind_dwi).py`
 
 ## Description
