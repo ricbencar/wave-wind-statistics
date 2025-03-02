@@ -6,7 +6,7 @@ This Python script performs a Comprehensive Extreme Value Analysis (EVA) on envi
 - Fitting Generalized Extreme Value (GEV) distributions for overall data and by 30° sectors.
 - Generating windrose plots to visualize the distribution of data against directional variables.
 - Creating a landscape PDF report containing formatted tables and plots.
-![transpose](https://github.com/user-attachments/assets/3889a175-34e4-4083-976b-7431a8c9c065)
+![wave-wind-stats](https://github.com/user-attachments/assets/48c22c6b-d035-405d-8db1-cb63e84b9a2b)
 ## Input Format
 The input CSV file should contain the following columns:
 - `datetime`: Timestamps for the data points.
