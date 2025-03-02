@@ -1,6 +1,4 @@
 # Extreme Value Analysis (EVA) of Waves and Wind
-`stats_era5_(swh_mwd_pp1d_wind_dwi).py`
-
 ## Description
 This Python script performs a Comprehensive Extreme Value Analysis (EVA) on environmental data. Specifically, it includes:
 - Reading and rounding CSV data.
