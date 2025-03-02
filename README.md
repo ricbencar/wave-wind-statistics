@@ -53,14 +53,14 @@ A PDF report (.pdf) with visualizations and statistics.
 
 ## Utility Functions
 
-round_variables(df): Rounds specific columns of a DataFrame to defined decimal places.
-format_interval(interval_str): Converts an interval string to a compact format.
-make_joint_distribution(df, var1, var2, bins1, bins2): Computes a 2D joint distribution between two variables in percentage.
-add_sums_and_highlight(df): Enhances a DataFrame for highlighting maximum values for PDF output.
-gev_fit(annual_max_series): Fits a GEV distribution to an annual maximum series.
-plot_gev_with_return_lines(...): Generates a plot comparing empirical CDF with a fitted GEV CDF.
-plot_windrose(df, var, dir_col, ...): Creates a windrose plot for a given variable against its directional data.
-pdf_print_table(pdf, df, ...): Renders a DataFrame as a formatted table onto a PDF page.
+- round_variables(df): Rounds specific columns of a DataFrame to defined decimal places;
+- format_interval(interval_str): Converts an interval string to a compact format;
+- make_joint_distribution(df, var1, var2, bins1, bins2): Computes a 2D joint distribution between two variables in percentage;
+- add_sums_and_highlight(df): Enhances a DataFrame for highlighting maximum values for PDF output;
+- gev_fit(annual_max_series): Fits a GEV distribution to an annual maximum series;
+- plot_gev_with_return_lines(...): Generates a plot comparing empirical CDF with a fitted GEV CDF;
+- plot_windrose(df, var, dir_col, ...): Creates a windrose plot for a given variable against its directional data;
+- pdf_print_table(pdf, df, ...): Renders a DataFrame as a formatted table onto a PDF page.
 
 ## Main Analysis Workflow
 extreme_value_analysis(input_csv)
