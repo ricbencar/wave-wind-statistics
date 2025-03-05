@@ -48,8 +48,8 @@ python stats_era5_(swh_mwd_pp1d_wind_dwi).py <filename.csv>
 
 The script will generate two output files:
 
-A detailed CSV report (.rpt.csv)
-A PDF report (.pdf) with visualizations and statistics.
+- A detailed CSV report (.rpt.csv);
+- A PDF report (.pdf) with visualizations and statistics.
 
 ## Utility Functions
 
@@ -67,9 +67,9 @@ extreme_value_analysis(input_csv)
 
 This function encapsulates the entire analysis process. It handles:
 
-Reading of the input CSV.
-Data rounding and descriptive statistics computation.
-GEV fitting and analysis (both overall and by sector).
-Joint distribution calculations.
-Visualization creation including CDF plots and windrose plots.
-PDF report generation containing all results.
+- Reading of the input CSV;
+- Data rounding and descriptive statistics computation;
+- GEV fitting and analysis (both overall and by sector);
+- Joint distribution calculations;
+- Visualization creation including CDF plots and windrose plots;
+- PDF report generation containing all results.
