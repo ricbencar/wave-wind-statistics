@@ -9,8 +9,15 @@
 #               - Generating windrose plots
 #               - Creating a landscape PDF report with formatted tables and plots
 #
-#               The input CSV file is expected to have the columns:
-#                 datetime, swh, mwd, pp1d, wind, dwi.
+#               The input CSV file is expected to have at least the columns:
+#                 datetime, swh, mwd, pp1d.
+#
+#               If the input file uses alternative column names:
+#                 - If both local (swh_local, mwd_local) and offshore (swh_offshore, mwd_offshore)
+#                   exist, only the local columns will be used.
+#                 - Otherwise, if only offshore exist, they will be renamed to swh and mwd.
+#
+#               The optional wind/dwi columns will be used if available.
 #
 #               The script saves both intermediate CSV reports and a final
 #               formatted PDF report.
@@ -20,11 +27,11 @@
 IMAGE_DPI = 180
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import genextreme
-import sys
 from fpdf import FPDF
 from windrose import WindroseAxes
 
@@ -39,6 +46,33 @@ RETURN_PERIODS = [2, 5, 10, 25, 50, 100, 250, 1000]
 # SECTION 1: UTILITY FUNCTIONS
 # =============================================================================
 
+def rename_columns(df):
+    """
+    Ensure that the expected columns "swh" and "mwd" exist.
+    
+    - If both "swh_local" and "mwd_local" are present, they are renamed to "swh"
+      and "mwd" respectively and any offshore versions are dropped.
+    - Otherwise, if only the offshore columns exist (and swh/mwd are missing),
+      they are renamed accordingly.
+    """
+    # Process swh columns:
+    if "swh_local" in df.columns:
+        df = df.rename(columns={"swh_local": "swh"})
+        if "swh_offshore" in df.columns:
+            df = df.drop(columns=["swh_offshore"])
+    elif "swh" not in df.columns and "swh_offshore" in df.columns:
+        df = df.rename(columns={"swh_offshore": "swh"})
+    
+    # Process mwd columns:
+    if "mwd_local" in df.columns:
+        df = df.rename(columns={"mwd_local": "mwd"})
+        if "mwd_offshore" in df.columns:
+            df = df.drop(columns=["mwd_offshore"])
+    elif "mwd" not in df.columns and "mwd_offshore" in df.columns:
+        df = df.rename(columns={"mwd_offshore": "mwd"})
+    
+    return df
+
 def round_variables(df):
     """
     Round numerical values in specific DataFrame columns according to defined rules.
@@ -50,12 +84,6 @@ def round_variables(df):
       - 'mwp': Rounded to 1 decimal place.
       - 'wind': Rounded to 2 decimal places.
       - 'dwi': Rounded to 0 decimal places and converted to integer.
-      
-    Parameters:
-      df (pandas.DataFrame): Input DataFrame containing the expected columns.
-      
-    Returns:
-      None. The operation is performed in-place.
     """
     if "swh" in df.columns:
         df["swh"] = df["swh"].round(2)
@@ -76,14 +104,6 @@ def format_interval(interval_str):
     Convert an interval string to a compact, hyphen-separated format.
     
     For example, converts "[0.0, 30.0]" into "0-30".
-    
-    Parameters:
-      interval_str (str): String representing an interval with square brackets
-                          and comma-separated numbers.
-    
-    Returns:
-      A string in the format "a-b" where a and b are integers, or the original
-      string if any error occurs.
     """
     try:
         parts = interval_str.strip("[]").split(",")
@@ -96,21 +116,6 @@ def format_interval(interval_str):
 def make_joint_distribution(df, var1, var2, bins1, bins2):
     """
     Compute a 2D joint distribution (in percentage) between two variables.
-    
-    The function bins the data from columns 'var1' and 'var2' using the provided
-    bin edges, converts the resulting bin labels to a compact format using
-    format_interval(), and then computes the cross-tabulation (frequency count).
-    The frequencies are then normalized to represent percentages.
-    
-    Parameters:
-      df (pandas.DataFrame): The input DataFrame.
-      var1 (str): Name of the first variable/column.
-      var2 (str): Name of the second variable/column.
-      bins1 (array-like): Bin edges to be used for the first variable.
-      bins2 (array-like): Bin edges to be used for the second variable.
-    
-    Returns:
-      pandas.DataFrame: A DataFrame representing the percentage joint distribution.
     """
     cat1 = pd.cut(df[var1], bins=bins1, include_lowest=True).astype(str)
     cat2 = pd.cut(df[var2], bins=bins2, include_lowest=True).astype(str)
@@ -123,20 +128,8 @@ def make_joint_distribution(df, var1, var2, bins1, bins2):
 def add_sums_and_highlight(df):
     """
     Process the DataFrame to facilitate later highlighting in the PDF.
-    
-    This routine creates a copy of the input DataFrame and searches for the 
-    largest numeric cell within it. The function returns:
-      - The modified DataFrame.
-      - The coordinates (row index, column name) of the cell containing the 
-        maximum numeric value.
-      
-    Parameters:
-      df (pandas.DataFrame): The DataFrame to be processed.
-      
-    Returns:
-      tuple: (df_out, highlight_cell) where df_out is the modified DataFrame and 
-             highlight_cell is a tuple (row_index, column_label) indicating the 
-             location of the maximum value.
+    Returns the modified DataFrame and the coordinates (row, column) of the cell 
+    containing the maximum numeric value.
     """
     df_out = df.copy()
     numeric_cols = df_out.select_dtypes(include=[np.number]).columns
@@ -155,15 +148,6 @@ def add_sums_and_highlight(df):
 def gev_fit(annual_max_series):
     """
     Fit a Generalized Extreme Value (GEV) distribution to an annual maximum series.
-    
-    Uses the scipy.stats.genextreme.fit function to determine the shape, location,
-    and scale parameters of the GEV distribution that best fits the input data.
-    
-    Parameters:
-      annual_max_series (pandas.Series or array-like): Series of annual maximum values.
-      
-    Returns:
-      tuple: (shape, loc, scale) parameters of the fitted GEV distribution.
     """
     shape, loc, scale = genextreme.fit(annual_max_series)
     return shape, loc, scale
@@ -171,24 +155,6 @@ def gev_fit(annual_max_series):
 def plot_gev_with_return_lines(annual_max, shape, loc, scale, outpng, var_label, sector_label):
     """
     Generate and save a plot comparing the empirical CDF with a fitted GEV CDF.
-    
-    The plot includes:
-      - Empirical CDF points of the annual maximum data.
-      - The fitted GEV CDF curve.
-      - Vertical dashed lines indicating return levels for predefined return periods.
-      - Text annotations showing the return period and corresponding level.
-    
-    Parameters:
-      annual_max (array-like): Annual maximum data.
-      shape (float): Shape parameter of the fitted GEV.
-      loc (float): Location parameter of the fitted GEV.
-      scale (float): Scale parameter of the fitted GEV.
-      outpng (str): Filename (with path) where the PNG image will be saved.
-      var_label (str): Label for the variable (e.g., "swh" or "wind") for axis and annotation.
-      sector_label (str): Label indicating the sector (or overall) analysis.
-    
-    Returns:
-      None. The plot is saved as a PNG file using the global IMAGE_DPI resolution.
     """
     plt.figure(figsize=(7, 4))
     x_sorted = np.sort(annual_max)
@@ -215,22 +181,6 @@ def plot_gev_with_return_lines(annual_max, shape, loc, scale, outpng, var_label,
 def plot_windrose(df, var, dir_col, outpng, var_label, direction_label, bins=None):
     """
     Create and save a windrose plot for a given variable against a directional column.
-    
-    The windrose plot is a specialized polar bar plot, which displays the frequency
-    distribution of the variable as a function of direction.
-    
-    Parameters:
-      df (pandas.DataFrame): Input DataFrame containing the data.
-      var (str): Name of the variable column (e.g., "swh" or "wind").
-      dir_col (str): Name of the column containing directional data (e.g., "mwd" or "dwi").
-      outpng (str): Filename (with path) to save the PNG image.
-      var_label (str): Descriptive label for the variable.
-      direction_label (str): Descriptive label for the direction.
-      bins (array-like, optional): Custom bin edges for the variable; if not provided,
-                                   default bins based on the data range are used.
-    
-    Returns:
-      None. The generated plot is saved as a PNG file using the global IMAGE_DPI resolution.
     """
     if bins is None:
         # Define default bins based on the variable range (5 bins)
@@ -248,30 +198,6 @@ def plot_windrose(df, var, dir_col, outpng, var_label, direction_label, bins=Non
 def pdf_print_table(pdf, df, title="", decimals=2, highlight_cell=None, font="Courier", size=10):
     """
     Render a pandas DataFrame as a formatted table onto a PDF page.
-    
-    This routine performs the following:
-      - Optionally prints a title.
-      - Inserts an "Index" column for row labels.
-      - Converts all cell values to strings (with number formatting as needed).
-      - Dynamically calculates column widths based on content.
-      - Scales the total table width to fit within the available width of a landscape
-        A4 page.
-      - Replaces overly long header text by truncating and using three periods ("...")
-        to indicate abbreviation.
-      - Uses the FPDF library to add each cell as a table cell in the PDF.
-    
-    Parameters:
-      pdf (FPDF): An instance of the FPDF class.
-      df (pandas.DataFrame): The DataFrame to be printed.
-      title (str, optional): Title text to be printed above the table.
-      decimals (int, optional): Number of decimals to use for float formatting.
-      highlight_cell (tuple, optional): A tuple indicating a cell (row, column) to be
-                                        highlighted (currently not used for color).
-      font (str, optional): Font family to use (default is "Courier").
-      size (int, optional): Font size for the table text.
-    
-    Returns:
-      None. The table is directly printed onto the current page of the PDF document.
     """
     if title:
         pdf.set_font(font, style="B", size=size+2)
@@ -354,37 +280,35 @@ def pdf_print_table(pdf, df, title="", decimals=2, highlight_cell=None, font="Co
 
 def extreme_value_analysis(input_csv):
     """
-    Execute the complete extreme value analysis workflow.
-    
-    This function performs the following steps:
-      1. Reads the CSV file (only the necessary columns) and applies rounding.
-      2. Computes descriptive statistics and additional statistics such as skewness 
-         and kurtosis.
-      3. Fits overall GEV distributions for 'swh' and 'wind' using annual maxima.
-      4. Computes joint distribution tables (as percentage frequencies) for:
-         - swh vs mwd
-         - swh vs pp1d
-         - wind vs dwi
-      5. Saves all computed results to a CSV file.
-      6. Performs GEV analysis for 'swh' and 'wind' on 30° sectors (using 'dwi' for sectoring).
-      7. Generates windrose plots for swh (against mwd) and wind (against dwi).
-      8. Creates a landscape PDF report (A4) that includes:
-         - Title page with input file name and report title.
-         - Tables for descriptive statistics, GEV analysis (overall and by sectors),
-           joint distributions, and windrose plots.
-         - Plots for the GEV fits and sector analyses.
-         
-    Parameters:
-      input_csv (str): Filename (with path) of the input CSV file.
-      
-    Returns:
-      None. The function saves a detailed CSV report and a PDF report.
+    Execute the complete extreme value analysis workflow, conditionally
+    including wind/dwi calculations if those columns exist.
     """
     print("Reading CSV...")
-    # Read only the specified columns, parsing 'datetime' and using it as the index.
-    cols_to_use = ["datetime", "swh", "mwd", "pp1d", "wind", "dwi"]
-    df = pd.read_csv(input_csv, usecols=cols_to_use, parse_dates=["datetime"], index_col="datetime")
+    # Read CSV file with datetime parsing.
+    df = pd.read_csv(input_csv, parse_dates=["datetime"])
+    df.set_index("datetime", inplace=True)
+    
+    # Rename columns if expected names are not found.
+    df = rename_columns(df)
+    
+    # Determine which columns are available.
+    available_cols = df.columns.tolist()
+    # Always require swh, mwd, and pp1d.
+    required_cols = ["swh", "mwd", "pp1d"]
+    # Optional wind/dwi columns.
+    perform_wind_analysis = ("wind" in available_cols and "dwi" in available_cols)
+    if perform_wind_analysis:
+        required_cols.extend(["wind", "dwi"])
+    else:
+        print("Wind and DWI parameters not found. Skipping wind-related analysis.")
+    
+    # Use only the available (or required) columns.
+    df = df[required_cols]
     round_variables(df)
+    
+    # For sector analysis of swh, determine the directional column.
+    # Use "dwi" if available; otherwise, use "mwd" as a proxy.
+    dir_col_for_swh = "dwi" if "dwi" in df.columns else "mwd"
     
     # Prepare base filename (without extension) for saving figures.
     base = os.path.splitext(os.path.basename(input_csv))[0]
@@ -398,28 +322,34 @@ def extreme_value_analysis(input_csv):
     desc_df.loc["kurtosis"] = df.kurt()
     desc_df = desc_df.T
     
-    # --- GEV Analysis (Overall) ---
-    print("\nPerforming GEV analysis for swh and wind (all directions)...")
+    # --- GEV Analysis (Overall) for swh ---
+    print("\nPerforming GEV analysis for swh (all directions)...")
     annual_max_swh = df["swh"].resample("Y").max().dropna()
     shape_swh, loc_swh, scale_swh = gev_fit(annual_max_swh)
     rp_swh = {T: genextreme.ppf(1 - 1/T, shape_swh, loc=loc_swh, scale=scale_swh) for T in RETURN_PERIODS}
     
-    annual_max_wind = df["wind"].resample("Y").max().dropna()
-    shape_wind, loc_wind, scale_wind = gev_fit(annual_max_wind)
-    rp_wind = {T: genextreme.ppf(1 - 1/T, shape_wind, loc=loc_wind, scale=scale_wind) for T in RETURN_PERIODS}
+    # --- Optional: GEV Analysis for wind (if available) ---
+    if perform_wind_analysis:
+        print("\nPerforming GEV analysis for wind (all directions)...")
+        annual_max_wind = df["wind"].resample("Y").max().dropna()
+        shape_wind, loc_wind, scale_wind = gev_fit(annual_max_wind)
+        rp_wind = {T: genextreme.ppf(1 - 1/T, shape_wind, loc=loc_wind, scale=scale_wind) for T in RETURN_PERIODS}
     
     # --- Joint Distributions ---
-    print("\nComputing joint distributions (swh vs mwd, swh vs pp1d, wind vs dwi)...")
+    print("\nComputing joint distributions (swh vs mwd, swh vs pp1d)...")
     NBINS = 10
     swh_bins = np.linspace(df["swh"].min(), df["swh"].max(), NBINS+1)
-    mwd_bins = np.linspace(0, 360, 13)  # Use 12 bins covering 0 to 360 degrees.
+    mwd_bins = np.linspace(0, 360, 13)  # 12 bins covering 0 to 360 degrees.
     pp1d_bins = np.linspace(df["pp1d"].min(), df["pp1d"].max(), NBINS+1)
-    wind_bins = np.linspace(df["wind"].min(), df["wind"].max(), NBINS+1)
-    dwi_bins = np.linspace(0, 360, 13)  # Use 12 bins for directional data.
-    
     joint_swh_mwd = make_joint_distribution(df, "swh", "mwd", swh_bins, mwd_bins)
     joint_swh_pp1d = make_joint_distribution(df, "swh", "pp1d", swh_bins, pp1d_bins)
-    joint_wind_dwi = make_joint_distribution(df, "wind", "dwi", wind_bins, dwi_bins)
+    
+    # --- Optional: Joint Distribution for wind vs dwi ---
+    if perform_wind_analysis:
+        print("\nComputing joint distribution (wind vs dwi)...")
+        wind_bins = np.linspace(df["wind"].min(), df["wind"].max(), NBINS+1)
+        dwi_bins = np.linspace(0, 360, 13)  # 12 bins for directional data.
+        joint_wind_dwi = make_joint_distribution(df, "wind", "dwi", wind_bins, dwi_bins)
     
     # --- Save All Results to CSV ---
     output_csv = input_csv.replace(".csv", ".rpt.csv")
@@ -433,28 +363,30 @@ def extreme_value_analysis(input_csv):
         f.write("ReturnPeriod,ReturnLevel\n")
         for T in RETURN_PERIODS:
             f.write(f"{T},{rp_swh[T]:.6f}\n")
-        f.write("\n# C) GEV wind (all directions)\n")
-        f.write("shape,loc,scale\n")
-        f.write(f"{shape_wind:.6f},{loc_wind:.6f},{scale_wind:.6f}\n")
-        f.write("ReturnPeriod,ReturnLevel\n")
-        for T in RETURN_PERIODS:
-            f.write(f"{T},{rp_wind[T]:.6f}\n")
-        f.write("\n# D) Joint Dist: swh vs mwd (%)\n")
+        if perform_wind_analysis:
+            f.write("\n# C) GEV wind (all directions)\n")
+            f.write("shape,loc,scale\n")
+            f.write(f"{shape_wind:.6f},{loc_wind:.6f},{scale_wind:.6f}\n")
+            f.write("ReturnPeriod,ReturnLevel\n")
+            for T in RETURN_PERIODS:
+                f.write(f"{T},{rp_wind[T]:.6f}\n")
+            f.write("\n# D) Joint Dist: wind vs dwi (%)\n")
+            joint_wind_dwi.to_csv(f)
+        f.write("\n# E) Joint Dist: swh vs mwd (%)\n")
         joint_swh_mwd.to_csv(f)
-        f.write("\n# E) Joint Dist: swh vs pp1d (%)\n")
+        f.write("\n# F) Joint Dist: swh vs pp1d (%)\n")
         joint_swh_pp1d.to_csv(f)
-        f.write("\n# F) Joint Dist: wind vs dwi (%)\n")
-        joint_wind_dwi.to_csv(f)
     
     # --- GEV Analysis by 30° Sectors for swh ---
     print("\nPerforming GEV analysis for swh by 30° sectors...")
-    bins_dwi = np.arange(0, 361, 30)
+    bins_sector = np.arange(0, 361, 30)
     sector_swh_results = []
     sector_swh_plots = []
-    for i in range(len(bins_dwi)-1):
-        dmin, dmax = bins_dwi[i], bins_dwi[i+1]
+    for i in range(len(bins_sector)-1):
+        dmin, dmax = bins_sector[i], bins_sector[i+1]
         sector_label = f"{dmin:03.0f}-{dmax:03.0f}"
-        sector_data = df[(df["dwi"] >= dmin) & (df["dwi"] < dmax)]["swh"].resample("Y").max().dropna()
+        # Use the chosen directional column (dwi if available, otherwise mwd)
+        sector_data = df[(df[dir_col_for_swh] >= dmin) & (df[dir_col_for_swh] < dmax)]["swh"].resample("Y").max().dropna()
         if len(sector_data) < 3:
             sector_swh_results.append([sector_label, np.nan, np.nan, np.nan, {}])
             continue
@@ -465,43 +397,48 @@ def extreme_value_analysis(input_csv):
         sector_swh_plots.append((outpng, sector_label))
         sector_swh_results.append([sector_label, sh, lc, sc, rp_dict])
     
-    # --- GEV Analysis by 30° Sectors for wind ---
-    print("\nPerforming GEV analysis for wind by 30° sectors...")
-    sector_wind_results = []
-    sector_wind_plots = []
-    for i in range(len(bins_dwi)-1):
-        dmin, dmax = bins_dwi[i], bins_dwi[i+1]
-        sector_label = f"{dmin:03.0f}-{dmax:03.0f}"
-        sector_data = df[(df["dwi"] >= dmin) & (df["dwi"] < dmax)]["wind"].resample("Y").max().dropna()
-        if len(sector_data) < 3:
-            sector_wind_results.append([sector_label, np.nan, np.nan, np.nan, {}])
-            continue
-        sh, lc, sc = gev_fit(sector_data)
-        rp_dict = {T: genextreme.ppf(1 - 1/T, sh, loc=lc, scale=sc) for T in RETURN_PERIODS}
-        outpng = os.path.join(FIGURES_FOLDER, f"{base}_wind_sector_{dmin:03}-{dmax:03}.png")
-        plot_gev_with_return_lines(sector_data, sh, lc, sc, outpng, "wind", sector_label)
-        sector_wind_plots.append((outpng, sector_label))
-        sector_wind_results.append([sector_label, sh, lc, sc, rp_dict])
+    # --- Optional: GEV Analysis by 30° Sectors for wind ---
+    if perform_wind_analysis:
+        print("\nPerforming GEV analysis for wind by 30° sectors...")
+        bins_sector = np.arange(0, 361, 30)
+        sector_wind_results = []
+        sector_wind_plots = []
+        for i in range(len(bins_sector)-1):
+            dmin, dmax = bins_sector[i], bins_sector[i+1]
+            sector_label = f"{dmin:03.0f}-{dmax:03.0f}"
+            sector_data = df[(df["dwi"] >= dmin) & (df["dwi"] < dmax)]["wind"].resample("Y").max().dropna()
+            if len(sector_data) < 3:
+                sector_wind_results.append([sector_label, np.nan, np.nan, np.nan, {}])
+                continue
+            sh, lc, sc = gev_fit(sector_data)
+            rp_dict = {T: genextreme.ppf(1 - 1/T, sh, loc=lc, scale=sc) for T in RETURN_PERIODS}
+            outpng = os.path.join(FIGURES_FOLDER, f"{base}_wind_sector_{dmin:03}-{dmax:03}.png")
+            plot_gev_with_return_lines(sector_data, sh, lc, sc, outpng, "wind", sector_label)
+            sector_wind_plots.append((outpng, sector_label))
+            sector_wind_results.append([sector_label, sh, lc, sc, rp_dict])
     
-    # --- Generate Windrose Plots ---
-    print("\nGenerating windrose plots for swh (using mwd) and wind (using dwi)...")
+    # --- Windrose Plots ---
+    print("\nGenerating windrose plot for swh (using mwd)...")
     plot_swh_windrose = os.path.join(FIGURES_FOLDER, f"{base}_swh_windrose.png")
-    plot_wind_windrose = os.path.join(FIGURES_FOLDER, f"{base}_wind_windrose.png")
     plot_windrose(df, "swh", "mwd", plot_swh_windrose, "swh", "mwd")
-    plot_windrose(df, "wind", "dwi", plot_wind_windrose, "wind", "dwi")
+    if perform_wind_analysis:
+        print("Generating windrose plot for wind (using dwi)...")
+        plot_wind_windrose = os.path.join(FIGURES_FOLDER, f"{base}_wind_windrose.png")
+        plot_windrose(df, "wind", "dwi", plot_wind_windrose, "wind", "dwi")
     
     # --- Generate PDF Report ---
     pdf_file = input_csv.replace(".csv", ".pdf")
     print(f"\nCreating PDF report: {pdf_file}")
     
-    # Pre-generate overall GEV plots for swh and wind
+    # Pre-generate overall GEV plots for swh and (if available) wind
     plot_swh_all = os.path.join(FIGURES_FOLDER, f"{base}_swh_all.png")
     plot_gev_with_return_lines(annual_max_swh, shape_swh, loc_swh, scale_swh,
                                plot_swh_all, "swh", "all directions")
-    plot_wind_all = os.path.join(FIGURES_FOLDER, f"{base}_wind_all.png")
-    plot_gev_with_return_lines(annual_max_wind, shape_wind, loc_wind, scale_wind,
-                               plot_wind_all, "wind", "all directions")
-
+    if perform_wind_analysis:
+        plot_wind_all = os.path.join(FIGURES_FOLDER, f"{base}_wind_all.png")
+        plot_gev_with_return_lines(annual_max_wind, shape_wind, loc_wind, scale_wind,
+                                   plot_wind_all, "wind", "all directions")
+    
     # Create PDF in landscape orientation (A4)
     pdf = FPDF(orientation="L", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -535,7 +472,7 @@ def extreme_value_analysis(input_csv):
     pdf.ln(10)
     print("GEV swh (all directions) table and plot added.")
     
-    # 8.3 GEV swh (30° Sectors) Table
+    # 8.3 GEV swh (30° Sectors) Table & Plots
     pdf.add_page()
     pdf.set_font("Courier", "B", 11)
     pdf.cell(0, 8, "3) GEV: swh by 30° Sectors", ln=True)
@@ -568,55 +505,59 @@ def extreme_value_analysis(input_csv):
                 pdf.ln(10)
     print("SWH sector plots added.")
     
-    # 8.4 GEV wind (all directions) Table & Plot
-    pdf.add_page()
-    pdf.set_font("Courier", "B", 11)
-    pdf.cell(0, 8, "4) GEV: wind (all directions)", ln=True)
-    pdf.set_font("Courier", "", 10)
-    pdf.cell(0, 6, f"Shape={shape_wind:.4f}, Loc={loc_wind:.4f}, Scale={scale_wind:.4f}", ln=True)
-    pdf.ln(2)
-    pdf.cell(0, 6, "Return Periods => Return Levels (wind):", ln=True)
-    for T in RETURN_PERIODS:
-        pdf.cell(0, 6, f"  T={T}: {rp_wind[T]:.2f}", ln=True)
-    pdf.ln(3)
-    pdf.image(plot_wind_all, x=10, w=220)
-    pdf.ln(10)
-    print("GEV wind (all directions) table and plot added.")
-    
-    # 8.5 GEV wind (30° Sectors) Table
-    pdf.add_page()
-    pdf.set_font("Courier", "B", 11)
-    pdf.cell(0, 8, "5) GEV: wind by 30° Sectors", ln=True)
-    pdf.set_font("Courier", "", 10)
-    wind_sector_index = []
-    wind_sector_rows = []
-    for label, sh, lc, sc, rp_dict in sector_wind_results:
-        wind_sector_index.append(label)
-        if not rp_dict:
-            row = [np.nan, np.nan, np.nan] + [np.nan]*len(RETURN_PERIODS)
-        else:
-            row = [sh, lc, sc] + [rp_dict[t] for t in RETURN_PERIODS]
-        wind_sector_rows.append(row)
-    wind_cols = ["shape", "loc", "scale"] + [f"RP_{t}" for t in RETURN_PERIODS]
-    wind_sector_df = pd.DataFrame(wind_sector_rows, index=wind_sector_index, columns=wind_cols)
-    wind_sector_df_sums, wind_sector_highlight = add_sums_and_highlight(wind_sector_df)
-    pdf_print_table(pdf, wind_sector_df_sums, title="WIND GEV by Sector",
-                    decimals=2, highlight_cell=wind_sector_highlight, font="Courier", size=10)
-    print("GEV wind (30° sectors) table added.")
-    
-    # Insert wind sector plots (2 per page)
-    for i in range(0, len(sector_wind_plots), 2):
+    # 8.4 Optional: GEV wind (all directions) and sector analysis (if available)
+    if perform_wind_analysis:
+        # Overall wind analysis
         pdf.add_page()
-        for j in range(2):
-            if i+j < len(sector_wind_plots):
-                png_file, lbl = sector_wind_plots[i+j]
-                pdf.set_font("Courier", "B", 10)
-                pdf.cell(0, 6, f"WIND Sector {lbl}", ln=True)
-                pdf.image(png_file, x=10, w=220)
-                pdf.ln(10)
-    print("WIND sector plots added.")
+        pdf.set_font("Courier", "B", 11)
+        pdf.cell(0, 8, "4) GEV: wind (all directions)", ln=True)
+        pdf.set_font("Courier", "", 10)
+        pdf.cell(0, 6, f"Shape={shape_wind:.4f}, Loc={loc_wind:.4f}, Scale={scale_wind:.4f}", ln=True)
+        pdf.ln(2)
+        pdf.cell(0, 6, "Return Periods => Return Levels (wind):", ln=True)
+        for T in RETURN_PERIODS:
+            pdf.cell(0, 6, f"  T={T}: {rp_wind[T]:.2f}", ln=True)
+        pdf.ln(3)
+        pdf.image(plot_wind_all, x=10, w=220)
+        pdf.ln(10)
+        print("GEV wind (all directions) table and plot added.")
     
-    # 8.6 Joint Distribution Tables
+        # Wind sector analysis
+        pdf.add_page()
+        pdf.set_font("Courier", "B", 11)
+        pdf.cell(0, 8, "5) GEV: wind by 30° Sectors", ln=True)
+        pdf.set_font("Courier", "", 10)
+        wind_sector_index = []
+        wind_sector_rows = []
+        for label, sh, lc, sc, rp_dict in sector_wind_results:
+            wind_sector_index.append(label)
+            if not rp_dict:
+                row = [np.nan, np.nan, np.nan] + [np.nan]*len(RETURN_PERIODS)
+            else:
+                row = [sh, lc, sc] + [rp_dict[t] for t in RETURN_PERIODS]
+            wind_sector_rows.append(row)
+        wind_cols = ["shape", "loc", "scale"] + [f"RP_{t}" for t in RETURN_PERIODS]
+        wind_sector_df = pd.DataFrame(wind_sector_rows, index=wind_sector_index, columns=wind_cols)
+        wind_sector_df_sums, wind_sector_highlight = add_sums_and_highlight(wind_sector_df)
+        pdf_print_table(pdf, wind_sector_df_sums, title="WIND GEV by Sector",
+                        decimals=2, highlight_cell=wind_sector_highlight, font="Courier", size=10)
+        print("GEV wind (30° sectors) table added.")
+    
+        # Insert wind sector plots (2 per page)
+        for i in range(0, len(sector_wind_plots), 2):
+            pdf.add_page()
+            for j in range(2):
+                if i+j < len(sector_wind_plots):
+                    png_file, lbl = sector_wind_plots[i+j]
+                    pdf.set_font("Courier", "B", 10)
+                    pdf.cell(0, 6, f"WIND Sector {lbl}", ln=True)
+                    pdf.image(png_file, x=10, w=220)
+                    pdf.ln(10)
+        print("WIND sector plots added.")
+    else:
+        print("Skipping wind sector analysis due to missing wind/dwi parameters.")
+    
+    # 8.5 Joint Distribution Tables (swh-based tables always included)
     pdf.add_page()
     j_swh_mwd, swh_mwd_high = add_sums_and_highlight(joint_swh_mwd)
     pdf_print_table(pdf, j_swh_mwd, title="6) Joint Dist: swh vs mwd (%)",
@@ -625,24 +566,28 @@ def extreme_value_analysis(input_csv):
     j_swh_pp1d, swh_pp1d_high = add_sums_and_highlight(joint_swh_pp1d)
     pdf_print_table(pdf, j_swh_pp1d, title="Joint Dist: swh vs pp1d (%)",
                     decimals=2, highlight_cell=swh_pp1d_high, font="Courier", size=10)
-    pdf.add_page()
-    j_wind_dwi, wind_dwi_high = add_sums_and_highlight(joint_wind_dwi)
-    pdf_print_table(pdf, j_wind_dwi, title="Joint Dist: wind vs dwi (%)",
-                    decimals=2, highlight_cell=wind_dwi_high, font="Courier", size=10)
-    print("Joint distribution tables added.")
+    if perform_wind_analysis:
+        pdf.add_page()
+        j_wind_dwi, wind_dwi_high = add_sums_and_highlight(joint_wind_dwi)
+        pdf_print_table(pdf, j_wind_dwi, title="Joint Dist: wind vs dwi (%)",
+                        decimals=2, highlight_cell=wind_dwi_high, font="Courier", size=10)
+        print("Joint distribution tables (including wind/dwi) added.")
+    else:
+        print("Joint distribution for wind vs dwi skipped.")
     
-    # 8.7 Windrose Plots
+    # 8.6 Windrose Plots
     pdf.add_page()
     pdf.set_font("Courier", "B", 11)
     pdf.cell(0, 8, "7) Windrose: swh vs mwd", ln=True)
     pdf.image(plot_swh_windrose, x=10, w=IMAGE_DPI)
     pdf.ln(10)
-    pdf.add_page()
-    pdf.set_font("Courier", "B", 11)
-    pdf.cell(0, 8, "8) Windrose: wind vs dwi", ln=True)
-    pdf.image(plot_wind_windrose, x=10, w=IMAGE_DPI)
-    pdf.ln(10)
-    print("Windrose plots added.")
+    if perform_wind_analysis:
+        pdf.add_page()
+        pdf.set_font("Courier", "B", 11)
+        pdf.cell(0, 8, "8) Windrose: wind vs dwi", ln=True)
+        pdf.image(plot_wind_windrose, x=10, w=IMAGE_DPI)
+        pdf.ln(10)
+        print("Windrose plots added.")
     
     # Output the final PDF file.
     pdf.output(pdf_file)
@@ -656,6 +601,6 @@ def extreme_value_analysis(input_csv):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: stats_era5_data.py <filename.csv>")
+        print("Usage: python stats_era5_(swh_mwd_pp1d_wind_dwi).py <filename.csv>")
         sys.exit(1)
     extreme_value_analysis(sys.argv[1])
